@@ -1,0 +1,79 @@
+# ─── Java / Spring Boot ──────────────────────────
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+*.tmp
+*.pid
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+# Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# VS Code (Java)
+.vscode/
+
+# Spring Boot devtools
+spring-devtools.properties
+
+# ─── Node / Next.js ──────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/tsconfig.tsbuildinfo
+frontend/*.tsbuildinfo
+frontend/.vercel
+
+# npm / yarn / pnpm
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.yarn/cache
+frontend/.yarn/unplugged
+frontend/.yarn/build-state.yml
+frontend/.yarn/install-state.gz
+frontend/.pnp.*
+
+# ─── Environment / secrets ───────────────────────
+*.env
+.env
+.env.*
+!.env.example
+!**/.env.example
+backend/src/main/resources/application-secret.yml
+
+# ─── OS ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Uploads / temp ──────────────────────────────
+uploads/
+tmp/
+temp/
+*.tmp

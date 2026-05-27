@@ -1,0 +1,237 @@
+'use client';
+
+import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
+import { purchasesApi } from '@/lib/api';
+import { formatMoney, formatDateTime } from '@/lib/utils';
+import { PaymentBadge } from '@/components/ui/Badge';
+import Modal, { ConfirmModal } from '@/components/ui/Modal';
+import { PageLoading } from '@/components/ui/LoadingSpinner';
+import { DetailHeader, DetailStat, DetailSection } from '@/components/ui/DetailShell';
+import { useForm } from 'react-hook-form';
+import Link from 'next/link';
+import { Plus, Ban, Wallet, CircleDollarSign, ReceiptText, Printer } from 'lucide-react';
+
+interface PaymentForm { amount: string; paymentMethod: string; note: string; }
+
+export default function PurchaseDetailPage() {
+  const { id } = useParams();
+  const router = useRouter();
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const { register, handleSubmit, reset } = useForm<PaymentForm>({
+    defaultValues: { paymentMethod: 'cash', note: '', amount: '' },
+  });
+
+  const { data: purchase, isLoading } = useQuery({
+    queryKey: ['purchase', id],
+    queryFn: () => purchasesApi.get(Number(id)).then(r => r.data),
+  });
+
+  const payMutation = useMutation({
+    mutationFn: (data: PaymentForm) => purchasesApi.addPayment(Number(id), {
+      amount: parseFloat(data.amount), paymentMethod: data.paymentMethod, note: data.note,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase', id] });
+      toast.success(t('purchases.paymentAdded'));
+      setShowPayModal(false); reset();
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error || t('errors.serverError')),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => purchasesApi.cancel(Number(id)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase', id] });
+      toast.success(t('purchases.cancelSuccess'));
+      setShowCancelModal(false);
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error || t('errors.serverError')),
+  });
+
+  if (isLoading) return <PageLoading />;
+  if (!purchase) return <div className="p-6" style={{ color: 'rgb(var(--color-text-muted))' }}>{t('errors.notFound')}</div>;
+
+  const isPaid = purchase.paymentStatus === 'paid';
+  const isCancelled = purchase.status === 'cancelled';
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      <DetailHeader
+        backHref="/purchases"
+        title={purchase.purchaseNumber}
+        subtitle={formatDateTime(purchase.purchaseDate)}
+        badge={
+          <div className="flex items-center gap-2">
+            <PaymentBadge status={purchase.paymentStatus} />
+            {isCancelled && <span className="badge-red">{t('common.cancelled').toUpperCase()}</span>}
+          </div>
+        }
+        actions={
+          <>
+            <Link href={`/purchases/${id}/invoice`} className="btn-secondary btn-sm gap-1.5"><Printer size={14} /> {t('purchases.printInvoice', { defaultValue: 'Invoice' })}</Link>
+            {!isCancelled && !isPaid && (
+              <button onClick={() => setShowPayModal(true)} className="btn-primary btn-sm gap-1.5"><Plus size={14} /> {t('purchases.addPayment')}</button>
+            )}
+            {!isCancelled && (
+              <button onClick={() => setShowCancelModal(true)} className="btn-danger btn-sm gap-1.5"><Ban size={14} /> {t('purchases.cancelPurchase')}</button>
+            )}
+          </>
+        }
+      />
+
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <DetailStat label={t('purchases.totalAmount')} value={formatMoney(purchase.totalAmount)} icon={CircleDollarSign} />
+        <DetailStat label={t('purchases.paidAmount')} value={formatMoney(purchase.paidAmount)} icon={Wallet} accent="green" />
+        <DetailStat label={t('purchases.unpaidAmount')} value={formatMoney(purchase.unpaidAmount)} icon={ReceiptText} accent={purchase.unpaidAmount > 0 ? 'red' : 'default'} />
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6 mb-6">
+        <div className="lg:col-span-2">
+          <DetailSection title={t('common.items')} noPadding>
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t('common.product')}</th>
+                    <th>{t('common.sku')}</th>
+                    <th>{t('common.qty')}</th>
+                    <th>{t('purchases.unitCost')}</th>
+                    <th>{t('common.discount')}</th>
+                    <th>{t('common.total')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchase.items?.map((item: any) => (
+                    <tr key={item.id}>
+                      <td className="font-medium">{item.productName}</td>
+                      <td className="text-xs font-mono" style={{ color: 'rgb(var(--color-text-muted))' }}>{item.productSku || '—'}</td>
+                      <td className="num">{item.quantity}</td>
+                      <td className="num">{formatMoney(item.purchasePrice)}</td>
+                      <td className="num text-orange-600 dark:text-orange-400 text-sm">{item.discountAmount > 0 ? formatMoney(item.discountAmount) : '—'}</td>
+                      <td className="num font-medium">{formatMoney(item.totalAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </DetailSection>
+        </div>
+
+        <div className="space-y-4">
+          <DetailSection title={t('purchases.paymentSummary')}>
+            <dl className="space-y-2.5 text-sm">
+              {[
+                [t('purchases.totalAmount'), formatMoney(purchase.totalAmount), false],
+                purchase.additionalCost > 0 ? [t('purchases.additionalCosts'), formatMoney(purchase.additionalCost), false] : null,
+                [t('purchases.paidAmount'), formatMoney(purchase.paidAmount), false],
+                [t('purchases.unpaidAmount'), formatMoney(purchase.unpaidAmount), purchase.unpaidAmount > 0],
+                [t('common.paymentMethod'), purchase.paymentMethod, false],
+              ].filter(Boolean).map((row) => {
+                const [label, val, danger] = row as [string, string, boolean];
+                return (
+                  <div key={label} className="flex justify-between gap-3">
+                    <dt style={{ color: 'rgb(var(--color-text-muted))' }}>{label}</dt>
+                    <dd className={`font-medium num ${danger ? 'text-red-600 dark:text-red-400' : ''}`} style={danger ? undefined : { color: 'rgb(var(--color-text-primary))' }}>{val}</dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </DetailSection>
+
+          <DetailSection title={t('common.supplier')}>
+            {purchase.supplier ? (
+              <div className="space-y-1">
+                <button onClick={() => router.push(`/suppliers/${purchase.supplier.id}`)} className="font-medium text-sm hover:underline" style={{ color: 'rgb(var(--color-primary))' }}>
+                  {purchase.supplier.name}
+                </button>
+                <p className="text-xs" style={{ color: 'rgb(var(--color-text-muted))' }}>{purchase.supplier.phone}</p>
+                {purchase.supplier.currentDebt > 0 && (
+                  <p className="text-xs text-orange-500 dark:text-orange-400">{t('purchases.weOwe')}: {formatMoney(purchase.supplier.currentDebt)}</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm" style={{ color: 'rgb(var(--color-text-muted))' }}>{t('purchases.noSupplier')}</p>
+            )}
+          </DetailSection>
+
+          {purchase.note && (
+            <DetailSection title={t('common.note')}>
+              <p className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>{purchase.note}</p>
+            </DetailSection>
+          )}
+        </div>
+      </div>
+
+      {purchase.payments?.length > 0 && (
+        <DetailSection title={t('purchases.paymentHistory')} noPadding>
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('common.date')}</th>
+                  <th>{t('common.amount')}</th>
+                  <th>{t('common.source')}</th>
+                  <th>{t('common.status')}</th>
+                  <th>{t('common.note')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {purchase.payments.map((p: any) => (
+                  <tr key={p.id} className={p.status === 'reversed' ? 'opacity-50' : ''}>
+                    <td className="text-sm">{formatDateTime(p.createdAt)}</td>
+                    <td className={`num font-medium ${p.status === 'reversed' ? 'line-through' : 'text-red-600 dark:text-red-400'}`} style={p.status === 'reversed' ? { color: 'rgb(var(--color-text-muted))' } : undefined}>
+                      {formatMoney(p.amount)}
+                    </td>
+                    <td><span className="badge-blue text-xs capitalize">{p.paymentSource}</span></td>
+                    <td>{p.status === 'reversed' ? <span className="badge-red text-xs">{t('common.reversed')}</span> : <span className="badge-green text-xs">{t('common.active')}</span>}</td>
+                    <td className="text-sm" style={{ color: 'rgb(var(--color-text-muted))' }}>{p.note || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </DetailSection>
+      )}
+
+      <Modal open={showPayModal} onClose={() => { setShowPayModal(false); reset(); }} title={t('purchases.addPayment')} size="sm">
+        <form onSubmit={handleSubmit(data => payMutation.mutate(data))} className="space-y-3">
+          <div>
+            <label className="label">{t('purchases.unpaidAmount')}: {formatMoney(purchase.unpaidAmount)}</label>
+            <input type="number" step="0.01" max={purchase.unpaidAmount} {...register('amount', { required: true })} className="input" placeholder={t('common.amount')} defaultValue={purchase.unpaidAmount} />
+          </div>
+          <div>
+            <label className="label">{t('common.paymentMethod')}</label>
+            <select {...register('paymentMethod')} className="input">
+              <option value="cash">{t('common.cash')}</option>
+              <option value="bank_transfer">{t('common.bankTransfer')}</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">{t('common.note')}</label>
+            <input {...register('note')} className="input" placeholder={t('common.optionalNote')} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => { setShowPayModal(false); reset(); }} className="btn-secondary">{t('common.cancel')}</button>
+            <button type="submit" disabled={payMutation.isPending} className="btn-primary">{payMutation.isPending ? t('common.saving') : t('purchases.addPayment')}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmModal
+        open={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={() => cancelMutation.mutate()}
+        title={t('purchases.cancelPurchase')}
+        message={t('purchases.cancelConfirm')}
+        danger
+      />
+    </div>
+  );
+}
